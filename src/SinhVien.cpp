@@ -13,6 +13,13 @@ PTRSINHVIEN TimSinhVien(const DsLOP &dsLop, const string &masv) {
     return nullptr;
 }
 
+LOP* TimLopCuaSV(const DsLOP &dsLop, PTRSINHVIEN sv) {
+    for (int i = 0; i < dsLop.n; i++)
+        for (PTRSINHVIEN p = dsLop.nodes[i]->Dssv; p != nullptr; p = p->next)
+            if (p == sv) return dsLop.nodes[i];
+    return nullptr;
+}
+
 void GiaiPhongDsSV(PTRSINHVIEN &ds) {
     for (PTRSINHVIEN p = ds; p != nullptr; p = p->next) GiaiPhongDsDiem(p->data.Diem);
     GiaiPhongDs(ds);
@@ -26,7 +33,6 @@ static void ThemSinhVien(LOP *lop, const SINHVIEN &sv) {
 
 static void XoaSinhVien(LOP *lop, PTRSINHVIEN p) {
     GoNut(lop->Dssv, p);
-    GiaiPhongDsDiem(p->data.Diem);
     delete p;
 }
 
@@ -41,7 +47,7 @@ bool DocFileSinhVien(DsLOP &dsLop, const string &tenFile) {
         sv.TEN = t[3];
         sv.PHAI = t[4];
         string mk = (n >= 6) ? TrimChuoi(t[5]) : "";
-        if (!mk.empty()) sv.MATKHAU = mk;   // thieu truong mat khau: giu mac dinh MKSV
+        if (!mk.empty()) sv.MATKHAU = mk;   // thieu hoac rong mat khau: giu mac dinh MKSV
         if (vtLop == -1 || sv.MASV.empty() || sv.HO.empty() || sv.TEN.empty()) return;
         if (TimSinhVien(dsLop, sv.MASV) != nullptr) return;
         ThemSinhVien(dsLop.nodes[vtLop], sv);
@@ -67,7 +73,7 @@ static bool KhacNhau(const SINHVIEN &x, const SINHVIEN &y) {
 class NghiepVuSinhVien : public IManHinhNhap {
 private:
     DsLOP &goc;
-    string maLop;
+    string maLop;   // luu ma thay vi con tro: TaiLaiTuFile giai phong het LOP, con tro cu se treo
     PTRSINHVIEN snap;
 
     LOP* Lop() const {
@@ -133,8 +139,10 @@ public:
 
     string KiemTraTruocSua(int vt) override {
         PTRSINHVIEN p = Nut(vt);
-        return (p != nullptr && p->data.Diem != nullptr)
-               ? "Sinh vien da du thi, khong the sua hoac xoa!" : "";
+        if (p == nullptr) return "";
+        if (p->data.Diem != nullptr) return "Sinh vien da du thi, khong the sua hoac xoa!";
+        if (SinhVienDangThi(p->data.MASV)) return "Sinh vien dang co bai thi do dang, khong the sua hoac xoa!";
+        return "";
     }
 
     string XuLyThem(const string gt[]) override {

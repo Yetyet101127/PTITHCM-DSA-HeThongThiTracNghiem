@@ -21,163 +21,8 @@ static void Xuat(const string &s, int nen, int chu) {
 }
 
 static const int CAO_O_FORM = 4;
-static const int SO_LAN_DAT_KICH_THUOC = 40;
 
-#ifndef ENABLE_WRAP_AT_EOL_OUTPUT
-#define ENABLE_WRAP_AT_EOL_OUTPUT 0x0002
-#endif
-
-#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
-#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
-#endif
-
-static DWORD cheDoXuatGoc = 0;
-static bool  daLuuCheDoXuat = false;
-
-static void KhoiPhucCheDoXuat() {
-    if (daLuuCheDoXuat) SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), cheDoXuatGoc);
-}
-
-static void TatTuDongXuongDong() {
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD mode = 0;
-    if (!GetConsoleMode(h, &mode)) return;
-    if (!daLuuCheDoXuat) {
-        cheDoXuatGoc = mode;
-        daLuuCheDoXuat = true;
-        atexit(KhoiPhucCheDoXuat);
-    }
-    SetConsoleMode(h, (mode & ~(DWORD)ENABLE_WRAP_AT_EOL_OUTPUT) | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-}
-
-static HWND CuaSoWT() {
-    HWND ch = GetConsoleWindow();
-    if (ch == NULL) return NULL;
-    HWND chu = GetAncestor(ch, GA_ROOTOWNER);
-    char lop[64] = "";
-    if (chu != NULL && GetClassNameA(chu, lop, sizeof(lop)) > 0 &&
-        strcmp(lop, "CASCADIA_HOSTING_WINDOW_CLASS") == 0) return chu;
-    return NULL;
-}
-
-static bool LaySoCotDong(int &cot, int &dong) {
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) return false;
-    cot  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    dong = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-    return true;
-}
-
-static bool KichThuocChinhXac() {
-    int c, d;
-    if (!LaySoCotDong(c, d)) return true;
-    return c >= RONG_CONSOLE && c <= RONG_CONSOLE + 3 && d >= CAO_CONSOLE && d <= CAO_CONSOLE + 2;
-}
-
-static void BatDpiAware() {
-    typedef BOOL (WINAPI *HamDpi)(void);
-    HMODULE u = GetModuleHandleA("user32.dll");
-    if (u == NULL) return;
-    HamDpi f = (HamDpi)GetProcAddress(u, "SetProcessDPIAware");
-    if (f != NULL) f();
-}
-
-static bool VungLamViec(HWND w, RECT &r) {
-    HMONITOR m = MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi; ZeroMemory(&mi, sizeof(mi)); mi.cbSize = sizeof(mi);
-    if (m == NULL || !GetMonitorInfo(m, &mi)) return false;
-    r = mi.rcWork;
-    return true;
-}
-
-static bool DatKichThuocWT(HWND w, int maxLan) {
-    if (w == NULL) return false;
-    if (IsZoomed(w)) ShowWindow(w, SW_RESTORE);
-    for (int lan = 0; lan < maxLan; lan++) {
-        int c, d;
-        if (!LaySoCotDong(c, d)) return false;
-
-        RECT wr = {}, cr = {}, vl = {};
-        if (!GetWindowRect(w, &wr) || !GetClientRect(w, &cr)) return false;
-        bool coVung = VungLamViec(w, vl);
-        int W = wr.right - wr.left, H = wr.bottom - wr.top;
-
-        int newW = W, newH = H;
-        if (!KichThuocChinhXac()) {
-            double oC = (double)cr.right  / (c > 0 ? c : 1);
-            double oD = (double)cr.bottom / (d > 0 ? d : 1);
-            int dc = (RONG_CONSOLE + 1) - c, dd = (CAO_CONSOLE + 1) - d;
-            int dx = (int)(dc * oC + (dc > 0 ? 0.5 : -0.5));
-            int dy = (int)(dd * oD + (dd > 0 ? 0.5 : -0.5));
-            if (dc != 0 && dx == 0) dx = dc > 0 ? 1 : -1;
-            if (dd != 0 && dy == 0) dy = dd > 0 ? 1 : -1;
-            newW = W + dx; newH = H + dy;
-            if (coVung) {
-                if (newW > vl.right - vl.left) newW = vl.right - vl.left;
-                if (newH > vl.bottom - vl.top) newH = vl.bottom - vl.top;
-            }
-        }
-
-        int x = wr.left, y = wr.top;
-        if (coVung) {
-            if (x + newW > vl.right)  x = vl.right - newW;
-            if (y + newH > vl.bottom) y = vl.bottom - newH;
-            if (x < vl.left) x = vl.left;
-            if (y < vl.top)  y = vl.top;
-        }
-
-        bool doiSize = (newW != W || newH != H), doiViTri = (x != wr.left || y != wr.top);
-        if (!doiSize && !doiViTri) return KichThuocChinhXac();
-        SetWindowPos(w, NULL, x, y, newW, newH, SWP_NOZORDER | SWP_NOACTIVATE);
-        Sleep(60);
-        if (KichThuocChinhXac()) return true;
-    }
-    return KichThuocChinhXac();
-}
-
-static DWORD WINAPI LuongGiuKichThuoc(LPVOID tham) {
-    HWND w = (HWND)tham;
-    int thatBai = 0;
-    while (true) {
-        Sleep(500);
-        if (KichThuocChinhXac() && !IsZoomed(w)) { thatBai = 0; continue; }
-        if (thatBai >= 3) continue;
-        if (DatKichThuocWT(w, 6)) thatBai = 0; else thatBai++;
-    }
-    return 0;
-}
-
-static void KhoiTaoWindowsTerminal(HWND wt) {
-    BatDpiAware();
-    bool dat = DatKichThuocWT(wt, SO_LAN_DAT_KICH_THUOC);
-    bool tungLoi = !dat;
-
-    while (!dat) {
-        int c = 0, d = 0; LaySoCotDong(c, d);
-        clrscr();
-        gotoxy(2, 2);
-        cout << "Khong dat duoc kich thuoc " << RONG_CONSOLE << "x" << CAO_CONSOLE
-             << " trong Windows Terminal. Hien tai: " << c << "x" << d << " (cot x dong).";
-        gotoxy(2, 3);
-        cout << "Hay giam co chu (Ctrl + dau tru, hoac Settings > Defaults > Appearance > Font size), roi nhan phim bat ky.";
-        gotoxy(2, 4);
-        cout << "Nhan Esc de bo qua.";
-        if (getch() == PHIM_ESC) break;
-        dat = DatKichThuocWT(wt, SO_LAN_DAT_KICH_THUOC);
-    }
-
-    HANDLE t = CreateThread(NULL, 0, LuongGiuKichThuoc, (LPVOID)wt, 0, NULL);
-    if (t != NULL) CloseHandle(t);
-    if (tungLoi) clrscr();
-}
-
-void KhoiTaoConsole() {
-    HWND wt = CuaSoWT();
-    if (wt == NULL) return;
-    TatTuDongXuongDong();
-    KhoiTaoWindowsTerminal(wt);
-}
-
+// phim thuong: ma ky tu; phim mo rong (mui ten, F1...): -ma (vd PHIM_LEN = -72)
 int DocPhim() {
     int phim = getch();
     if (phim == 0 || phim == 224) {
@@ -186,17 +31,9 @@ int DocPhim() {
     return phim;
 }
 
-bool CoKyTu(const string &s, char c) {
-    for (int i = 0; i < (int)s.length(); i++)
-        if (s[i] == c) return true;
-    return false;
-}
-
 string KiemTraHopLeForm(const string gt[], int soTruong) {
     for (int i = 0; i < soTruong; i++)
         if (gt[i].empty()) return "Vui long nhap day du thong tin!";
-    for (int i = 0; i < soTruong; i++)
-        if (CoKyTu(gt[i], '|')) return "Khong duoc dung ky tu '|'!";
     return "";
 }
 
@@ -291,10 +128,6 @@ static bool LaNut(const Truong &t) { return t.loai == TRUONG_NUT; }
 static int SoDongHienThi(const Truong &t) { return t.soDong < 1 ? 1 : t.soDong; }
 static int CaoOTruong(const Truong &t) {
     return LaNut(t) ? CHIEU_CAO_NUT : CAO_O_FORM + SoDongHienThi(t) - 1;
-}
-
-static Truong TaoTruong(LoaiTruong loai, const string &nhan, int row, int col, int rong) {
-    Truong t; t.loai = loai; t.nhan = nhan; t.giaTri = ""; t.row = row; t.col = col; t.rong = rong; return t;
 }
 
 static bool LaChuCai(int c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
@@ -429,7 +262,14 @@ static void ChiaDongTheoTu(const string &s, int rongDong, DongChu &dong) {
 }
 
 static void TinhHienThiNhieuDong(const string &s, int rongDong, int soDong,
-                                  DongChu &dong, int &hangCon, int &cotCon, int &dongDau) {
+                                  DongChu &dong, int &hangCon, int &cotCon, int &dongDau, bool cuonNgang = false) {
+    if (cuonNgang) {   // 1 dong, chi hien phan duoi vua khit o (chua 1 cot cho con tro)
+        int hien = rongDong > 1 ? rongDong - 1 : 1;
+        dong.n = 1;
+        dong.d[0] = ((int)s.length() > hien) ? s.substr(s.length() - hien) : s;
+        hangCon = 0; cotCon = (int)dong.d[0].length(); dongDau = 0;
+        return;
+    }
     ChiaDongTheoTu(s, rongDong, dong);
     hangCon = dong.n - 1;
     cotCon = (int)dong.d[hangCon].length();
@@ -455,7 +295,7 @@ static void VeCuaSoNhieuDong(int x, int y, int rongDong, int soDong, const DongC
 
 bool NhapTextNhieuDong(int x, int y, int rongDong, int soDong, int maxLen, string &outStr, LoaiTruong loai,
                        int colorText, int colorBg, int *phimThoat, std::function<void()> khiCoPhim,
-                       std::function<void()> khiThayDoi) {
+                       std::function<void()> khiThayDoi, bool cuonNgang) {
     if (rongDong < 1) rongDong = 1;
     if (soDong < 1) soDong = 1;
     if (maxLen < 0) maxLen = 0;
@@ -464,13 +304,13 @@ bool NhapTextNhieuDong(int x, int y, int rongDong, int soDong, int maxLen, strin
     auto veLai = [&]() {
         AnHienConTro(false);
         DongChu dong; int hangCon, cotCon, dongDau;
-        TinhHienThiNhieuDong(outStr, rongDong, soDong, dong, hangCon, cotCon, dongDau);
+        TinhHienThiNhieuDong(outStr, rongDong, soDong, dong, hangCon, cotCon, dongDau, cuonNgang);
         VeCuaSoNhieuDong(x, y, rongDong, soDong, dong, dongDau, loai, colorText, colorBg);
     };
     auto datConTro = [&]() {
         if (TruongKhongGoChu(loai)) { AnHienConTro(false); return; }
         DongChu dong; int hangCon, cotCon, dongDau;
-        TinhHienThiNhieuDong(outStr, rongDong, soDong, dong, hangCon, cotCon, dongDau);
+        TinhHienThiNhieuDong(outStr, rongDong, soDong, dong, hangCon, cotCon, dongDau, cuonNgang);
         int hangHienThi = hangCon - dongDau;
         if (hangHienThi < 0) hangHienThi = 0;
         if (hangHienThi >= soDong) hangHienThi = soDong - 1;
@@ -554,7 +394,13 @@ static void VeOKhungNhieuDong(const Truong &t, bool chon) {
     VeDong(t.row + 2 + soDong, t.col, string(t.rong, '-'), t.rong, 0, mauVien);
 
     DongChu dong; int hangCon, cotCon, dongDau;
-    TinhHienThiNhieuDong(t.giaTri, w, soDong, dong, hangCon, cotCon, dongDau);
+    if (t.cuonNgang && (!chon || t.khoa)) {   // khong dang nhap: hien phan dau, cat bang "..."
+        dong.n = 1;
+        dong.d[0] = RutGon(t.giaTri, w);
+        VeCuaSoNhieuDong(t.col + 2, t.row + 2, w, soDong, dong, 0, t.loai, 15, 0);
+        return;
+    }
+    TinhHienThiNhieuDong(t.giaTri, w, soDong, dong, hangCon, cotCon, dongDau, t.cuonNgang);
     VeCuaSoNhieuDong(t.col + 2, t.row + 2, w, soDong, dong, dongDau, t.loai, 15, 0);
 }
 
@@ -573,12 +419,12 @@ static bool NhapOTruong(Truong &t, int *phim, std::function<void()> khiCoPhim) {
     int maxLen = GioiHanCung(t);
     if (maxLen <= 0) maxLen = w * soDong - 1;
     return NhapTextNhieuDong(t.col + 2, t.row + 2, w, soDong, maxLen, t.giaTri, t.loai,
-                             15, 0, phim, khiCoPhim, [&t]() { VeBoDemKyTu(t); });
+                             15, 0, phim, khiCoPhim, [&t]() { VeBoDemKyTu(t); }, t.cuonNgang);
 }
 
 static void DatConTro(const Truong &t) {
     if (LaNut(t) || t.khoa || TruongKhongGoChu(t.loai)) { AnHienConTro(false); return; }    DongChu dong; int hangCon, cotCon, dongDau;
-    TinhHienThiNhieuDong(t.giaTri, RongNoiDungO(t), SoDongHienThi(t), dong, hangCon, cotCon, dongDau);
+    TinhHienThiNhieuDong(t.giaTri, RongNoiDungO(t), SoDongHienThi(t), dong, hangCon, cotCon, dongDau, t.cuonNgang);
     gotoxy(t.col + 2 + cotCon, t.row + 2 + hangCon - dongDau);
     AnHienConTro(true);
 }
@@ -611,25 +457,20 @@ static int FocusKeTiep(const Truong ds[], int n, int focus, int buoc) {
 }
 
 int ChayForm(Truong ds[], int n, int &focus, const string &thongBao,
-             int hangTBTuyChon, int cotTBTuyChon, int rongTB, bool nhanEsc,
-             IKiemTraHetGio *kiemTraHetGio) {
+             bool nhanEsc, IKiemTraHetGio *kiemTraHetGio) {
     if (n <= 0) return -1;
     if (focus < 0 || focus >= n) focus = 0;
     int hangTB = HangDuoiForm(ds, n);
     int cotTB = ds[0].col;
-    if (hangTBTuyChon >= 0) {
-        hangTB = hangTBTuyChon;
-        if (cotTBTuyChon >= 0) cotTB = cotTBTuyChon;
-    }
     for (int i = 0; i < n; i++) VeTruong(ds[i], i == focus);
     bool coThongBao = !thongBao.empty();
-    if (coThongBao) VeThongBao(hangTB, cotTB, thongBao, true, rongTB);
+    if (coThongBao) VeThongBao(hangTB, cotTB, thongBao, true);
     DatConTro(ds[focus]);
 
     while (true) {
         int phim; int focusCu = focus;
         auto xoaThongBao = [&]() {
-            if (coThongBao) { VeThongBao(hangTB, cotTB, "", true, rongTB); coThongBao = false; }
+            if (coThongBao) { VeThongBao(hangTB, cotTB, "", true); coThongBao = false; }
         };
         if (!LaNut(ds[focus]) && !ds[focus].khoa) {
             NhapOTruong(ds[focus], &phim, xoaThongBao);
@@ -669,7 +510,7 @@ int MenuTong(string options[], int soLuong, int startRow, int startCol, int focu
     Truong ds[TOI_DA_TRUONG];
     for (int i = 0; i < soLuong; ++i)
     {
-        ds[i] = TaoTruong(TRUONG_NUT, options[i], startRow + i * VE_NUT_MOI, startCol, doRong);
+        ds[i] = Truong(TRUONG_NUT, options[i], "", startRow + i * VE_NUT_MOI, startCol, doRong);
         ds[i].canGiuaNut = false;
     }
     if (soLuong <= 0) return -1;
@@ -746,10 +587,10 @@ int HopThoai(const string &cauHoi, const string nut[], int soNut, int macDinh,
     Truong ds[TOI_DA_TRUONG];
     int batDauCol = col + (rong - tongRongNut) / 2;
     for (int i = 0; i < soNut; i++)
-        ds[i] = TaoTruong(TRUONG_NUT, nut[i], row + 4, batDauCol + i * (doRongNut + khoangCach), doRongNut);
+        ds[i] = Truong(TRUONG_NUT, nut[i], "", row + 4, batDauCol + i * (doRongNut + khoangCach), doRongNut);
 
     int focus = macDinh;
-    int kq = ChayForm(ds, soNut, focus, "", -1, -1, 0, false, kiemTraHetGio);
+    int kq = ChayForm(ds, soNut, focus, "", false, kiemTraHetGio);
     KhoiPhucVung(vung, row, col, rong, CAO_HOP_THOAI);
     return kq;
 }
@@ -775,7 +616,7 @@ void KhoiTaoBang(Bang &b, int row, int col, const string &donVi) {
     for (int i = 0; i < TOI_DA_DONG_TRANG; i++) b.dongDaVe[i] = "";
 }
 
-// man hinh da bi xoa: bo bo nho dem bang
+// man hinh da bi xoa (PhienManHinh doi): bo bo nho dem ve bang
 static void DongBoPhien(Bang &b) {
     if (b.phienVe == PhienManHinh) return;
     b.phienVe = PhienManHinh;
@@ -932,8 +773,8 @@ static void VeHuongDan(Bang &b, int rong) {
     b.huongDanDaVe = khoa;
 }
 
-static const int MAU_CHU_DANH_DAU = 10; //green 
-static void VeDongBang(Bang &b, int i, bool coDuLieu, bool chon, bool khongInDoDongKhoa = false) {
+static const int MAU_CHU_DANH_DAU = 10;   // xanh la 
+static void VeDongBang(Bang &b, int i, bool coDuLieu, bool chon) {
     DongBoPhien(b);
     int rong = RongBang(b) - 2;
     string nd = coDuLieu ? NoiDungDong(b, b.o[i], true) : string(rong, ' ');
@@ -943,7 +784,7 @@ static void VeDongBang(Bang &b, int i, bool coDuLieu, bool chon, bool khongInDoD
     bool gachNgang = false;
     if (chon) { mauNen = 8; mauChu = 15; }
     else if (st == DONG_CHUA_LUU) { mauNen = 10; mauChu = 0; }
-    if (st == DONG_KHOA && !khongInDoDongKhoa) mauChu = 14;
+    if (st == DONG_KHOA) mauChu = 14;
     if (st == DONG_DANH_DAU) mauChu = MAU_CHU_DANH_DAU;
     if (st == DONG_DANH_DAU_XOA) { gachNgang = true; if (!chon) mauChu = 7; }
 
@@ -993,7 +834,7 @@ static void VeSoTrang(Bang &b, int trang, int soTrang, int tong) {
     int hang = b.row + 3 + DONG_MOI_TRANG + 1;
     int colTong = b.col + rongBang - (int)(tongTxt.length() + trangTxt.length());
     if (colTong < b.col) colTong = b.col;
-    // ghi 1 lan tu cot dau bang
+    // ghi de tu cot dau bang de khong sot chu cu
     int rongTrai = (colTong - b.col) + (int)tongTxt.length();
     VeDong(hang, b.col, string(colTong - b.col, ' ') + tongTxt, rongTrai, 0, 15);
     VeDong(hang, b.col + rongTrai, trangTxt, (int)trangTxt.length(), 2, 15);
@@ -1003,8 +844,11 @@ void VeNenManHinh(const string &phuDe) {
     VeTieuDe(TIEU_DE_CHUONG_TRINH, phuDe);
 }
 
+// XEM: chi xem | CHO: thao tac (F1 them, F3 sua, Del xoa) | FORM_THEM/FORM_SUA: dang nhap form
+// FORM_SUA_CHO: da bam F3, chon dong de sua | TIM_KIEM: dang go o F4 | CHE_DO_XOA: danh dau dong de xoa
 enum TrangThaiGiaoDien { MAN_HINH_XEM, MAN_HINH_CHO, FORM_THEM, FORM_SUA, FORM_SUA_CHO, TIM_KIEM, CHE_DO_XOA };
 
+// ds danh dau luon sap GIAM dan theo idx (DanhDauCo, DanhDauThem dua vao thu tu nay)
 static bool DanhDauCo(const DsDanhDau &ds, int idx) {
     for (NutDanhDau *p = ds.dau; p != nullptr && p->idx >= idx; p = p->next)
         if (p->idx == idx) return true;
@@ -1044,11 +888,6 @@ struct NguCanhNhap : BangLoc {
 
 static bool DangTrongForm(const NguCanhNhap &nc) {
     return nc.trangThai == FORM_THEM || nc.trangThai == FORM_SUA;
-}
-
-static bool FormKhoa(const NguCanhNhap &nc) {
-    return nc.trangThai == FORM_SUA_CHO ||
-           (nc.trangThai == TIM_KIEM && nc.trangThaiTruoc == FORM_SUA_CHO);
 }
 
 static const string NHAN_TIM_KIEM = "F4: Tim kiem ";
@@ -1172,7 +1011,7 @@ static void VeCacDongBang(BangLoc &bl, int tong, bool hienChon) {
     int soDong = SoDongTrang(d.tt, tong);
     AnHienConTro(false);
     for (int i = 0; i < DONG_MOI_TRANG; i++)
-        VeDongBang(d.bang, i, i < soDong, hienChon && i == d.tt.chon && i < soDong, d.khongInDoDongKhoa);
+        VeDongBang(d.bang, i, i < soDong, hienChon && i == d.tt.chon && i < soDong);
     VeSoTrang(d.bang, d.tt.trang, (tong + DONG_MOI_TRANG - 1) / DONG_MOI_TRANG, tong);
 }
 
@@ -1234,11 +1073,12 @@ static void KhoiTaoNguCanh(NguCanhNhap &nc, DuLieuManHinhNhap &data) {
     for (int i = 0; i < data.soTruongForm; i++) {
         bool laNut = (data.loaiTruong[i] == TRUONG_NUT);
         int row = rowTuDong + (laNut ? 1 : 0);
-        nc.form[i] = TaoTruong(data.loaiTruong[i], data.nhanForm[i],
-                               row, nc.colForm, RONG_CONSOLE - nc.colForm - 5);
+        nc.form[i] = Truong(data.loaiTruong[i], data.nhanForm[i], "",
+                            row, nc.colForm, RONG_CONSOLE - nc.colForm - 5);
         nc.form[i].maxLen = data.maxLenTruong[i];
         nc.form[i].soDong = data.soDongTruong[i];
         nc.form[i].anKhoaNhan = data.anNhanKhoa[i];
+        nc.form[i].cuonNgang = data.cuonNgangTruong[i];
         rowTuDong = row + CaoOTruong(nc.form[i]);
     }
 }
@@ -1271,7 +1111,7 @@ static string TieuDeHienTai(const NguCanhNhap &nc) {
 }
 
 static string KhoaVeForm(const NguCanhNhap &nc) {
-    string k = SoSangChuoi(nc.focus) + (FormKhoa(nc) ? "K" : "M");
+    string k = SoSangChuoi(nc.focus);
     for (int i = 0; i < nc.data->soTruongForm; i++) {
         k += '\x01'; k += nc.form[i].giaTri; k += nc.form[i].khoa ? '1' : '0';
     }
@@ -1318,7 +1158,8 @@ static void VeManHinhNhap(NguCanhNhap &nc) {
         }
             break;
         case MAN_HINH_CHO:
-            ThemHuongDanXuongDong(d.bang, "F1: Them   F2: Luu   F3: Sua   Delete: Xoa", rongHD);
+            ThemHuongDanXuongDong(d.bang, d.enterTrongCheDoCho ? "F1: Them   F2: Luu   F3: Sua   Delete: Xoa   Enter: Xem chi tiet"
+                                                              : "F1: Them   F2: Luu   F3: Sua   Delete: Xoa", rongHD);
             ThemHuongDanXuongDong(d.bang, "Len/Xuong: Chuyen dong   Trai/Phai: Chuyen trang   Esc: Thoat", rongHD);
             break;
         case FORM_THEM:
@@ -1363,7 +1204,7 @@ static void VeManHinhNhap(NguCanhNhap &nc) {
     nc.thongBao = "";
 
     if (nc.trangThai == TIM_KIEM) DatConTroTim(nc);
-    else if (DangTrongForm(nc) && !FormKhoa(nc)) DatConTro(nc.form[nc.focus]);
+    else if (DangTrongForm(nc)) DatConTro(nc.form[nc.focus]);
     else AnHienConTro(false);
 }
 
@@ -1377,8 +1218,8 @@ static bool DiChuyenBang(BangLoc &bl, int phim, bool lenXuong) {
         if (soDong > 1) {
             int cu = d.tt.chon;
             d.tt.chon = (phim == PHIM_LEN) ? (cu - 1 + soDong) % soDong : (cu + 1) % soDong;
-            VeDongBang(d.bang, cu, true, false, d.khongInDoDongKhoa);
-            VeDongBang(d.bang, d.tt.chon, true, true, d.khongInDoDongKhoa);
+            VeDongBang(d.bang, cu, true, false);
+            VeDongBang(d.bang, d.tt.chon, true, true);
         }
         return false;
     }
@@ -1401,7 +1242,11 @@ static bool XuLyThoat(NguCanhNhap &nc) {
     if (chon == 0) {
         if (nv->XuLyLuu()) { nv->CapNhatSnapshot(); RoiCheDoCho(nc); }
         else DatThongBao(nc, "Loi ghi file! Du lieu chua duoc luu.", true);
-    } else if (chon == 1) nv->KhoiPhucSnapshot(); RoiCheDoCho(nc);
+    } else if (chon == 1) {
+        nv->KhoiPhucSnapshot();
+        RoiCheDoCho(nc);
+    }
+    // chon == 2 (HUY): o lai man hinh, giu nguyen thay doi chua luu
     return true;
 }
 
@@ -1412,7 +1257,7 @@ static void CapNhatBangLoc(BangLoc &bl) {
     NapDongBang(bl, bl.soLoc);
     VeCacDongBang(bl, bl.soLoc, true);
     VeOTimKiem(bl, true);
-    if (bl.soLoc == 0) HienThongBaoBang(bl, "Khong co ket qua phu hop!", true);
+    HienThongBaoBang(bl, bl.soLoc == 0 ? "Khong co ket qua phu hop!" : "", true);   // co ket qua lai -> xoa thong bao
 }
 
 static void BatDauLoc(BangLoc &bl) {
@@ -1569,7 +1414,6 @@ void DoiDanhDauBangLoc(BangLoc &bl, int idx) {
     else DanhDauThem(bl.danhDau, idx);
 }
 
-// chep chi so da danh dau (tang dan), tra ve so luong
 int LayDanhDauBangLoc(const BangLoc &bl, int ds[], int toiDa) {
     int vt = bl.danhDau.n - 1;   
     for (NutDanhDau *p = bl.danhDau.dau; p != nullptr; p = p->next, vt--)
@@ -1618,7 +1462,7 @@ static void DatFormThem(NguCanhNhap &nc) {
         nc.form[i].khoa = d.nghiepVu->TruongBiKhoaKhiThem(idx);
         idx++;
     }
-    nc.formKey = "";   // ve de lai form: xoa chu cu, dem ky tu ve 0/Max
+    nc.formKey = "";   // ep ve lai form
 }
 
 static int DauTienNhapDuoc(const NguCanhNhap &nc) {
@@ -1646,7 +1490,7 @@ static void MoFormSua(NguCanhNhap &nc) {
     }
     nc.focus = 0;
     while (nc.focus < d.soTruongForm - 1 && nc.form[nc.focus].khoa) nc.focus++;
-    nc.formKey = "";   // ve de lai form
+    nc.formKey = "";   // ep ve lai form
     nc.trangThai = FORM_SUA;
 }
 
@@ -1704,8 +1548,9 @@ static bool XuLyCheDoCho(NguCanhNhap &nc, int phim) {
     if (phim == PHIM_ESC) return XuLyThoat(nc);
     if (phim == PHIM_F1)  { MoFormThem(nc); return true; }
     if (phim == PHIM_F2) {
-        if (nv->XuLyLuu()) { nv->CapNhatSnapshot(); DatThongBao(nc, "Da luu du lie vao file!", false); }
+        if (nv->XuLyLuu()) { nv->CapNhatSnapshot(); DatThongBao(nc, "Da luu du lieu vao file!", false); }
         else DatThongBao(nc, "Loi ghi file! Du lieu chua duoc luu.", true);
+    
         return true;
     }
     if (phim == PHIM_F3 && tong <= 0) { DatThongBao(nc, "Danh sach trong!", true); return true; }
@@ -1715,6 +1560,12 @@ static bool XuLyCheDoCho(NguCanhNhap &nc, int phim) {
     }
     if (phim == PHIM_DELETE && tong <= 0) { DatThongBao(nc, "Danh sach trong!", true); return true; }
     if (phim == PHIM_DELETE) { DanhDauXoaHet(nc.danhDau); nc.trangThai = CHE_DO_XOA; return true; }
+    if (phim == PHIM_ENTER && d.enterTrongCheDoCho) {
+        if (tong <= 0) { DatThongBao(nc, "Danh sach trong!", true); return true; }
+        nv->XuLyEnter(ChiSoChon(d.tt));
+        nc.lamSachMan = true;   // man hinh chi tiet da ve de len, ve lai ca man hinh
+        return true;
+    }
     if (phim == PHIM_F4 && d.coTimKiem) return BamF4(nc);
     return DiChuyenBang(nc, phim, true);
 }
@@ -1757,9 +1608,9 @@ static bool XacNhanForm(NguCanhNhap &nc) {
         d.tt.chon  = (tong > 0) ? (tong - 1) % DONG_MOI_TRANG : 0;
         DatFormThem(nc);
         nc.focus = DauTienNhapDuoc(nc);
-    } else if (d.cheDoChiChon) {
-        nc.thoat = true;
-        return false;
+    } else if (d.cheDoChiChon) {   // vua thi xong: ve lai man hinh chon mon
+        nc.trangThai = MAN_HINH_XEM;
+        nc.lamSachMan = true;
     } else {
         nc.trangThai = FORM_SUA_CHO;
     }
@@ -1801,6 +1652,7 @@ void ChayManHinhNhap(DuLieuManHinhNhap &data) {
             Truong &tf = nc.form[nc.focus];
             if (DangTrongForm(nc) && !LaNut(tf) && !tf.khoa) {
                 NhapOTruong(tf, &phim, [&nc]() { XoaThongBao(nc); });
+                XoaThongBao(nc);   // phim thoat o (mui ten, Enter) cung xoa thong bao nhu cac phim khac
             } else {
                 if (nc.trangThai != TIM_KIEM) AnHienConTro(false);
                 phim = DocPhim();

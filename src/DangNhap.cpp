@@ -30,10 +30,7 @@ VaiTro DangNhap(DsLOP &dsLop, PTRSINHVIEN &svDangNhap) {
         if (tk.empty() || mk.empty()) {
             loi = "Vui long nhap day du tai khoan va mat khau!";
         }
-        else if (CoKyTu(tk, '|') || CoKyTu(mk, '|')) {
-            loi = "Khong duoc dung ky tu '|'!";
-        }
-        else if (tk == "GV" && mk == "GV") {
+        else if (tk == "GV" && mk == "GV") {   // tai khoan giang vien co dinh
             return vaitroGV;
         }
         else {

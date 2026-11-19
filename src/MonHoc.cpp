@@ -24,11 +24,12 @@ treeMH TimMonHoc(treeMH goc, const string &maMH) {
     return nullptr;
 }
 
-int DemMonHoc(treeMH goc) {
+static int DemMonHoc(treeMH goc) {
     return goc == nullptr ? 0 : 1 + DemMonHoc(goc->left) + DemMonHoc(goc->right);
 }
 
-void LietKeMonHoc(treeMH goc, treeMH ds[], int &i) {
+// duyet LNR: ds theo ma tang dan
+static void LietKeMonHoc(treeMH goc, treeMH ds[], int &i) {
     if (goc == nullptr) return;
     LietKeMonHoc(goc->left, ds, i);
     ds[i++] = goc;
@@ -54,6 +55,7 @@ static void ChenBST(treeMH &goc, treeMH nut) {
     *p = nut;
 }
 
+// go nut co ma = ma khoi cay, tra ve nut do (chua delete); nut co 2 con thi thay bang nut trai nhat cua cay con phai
 static treeMH GoBST(treeMH &goc, const string &ma) {
     treeMH *p = &goc;
     while (*p != nullptr && (*p)->data.MAMH != ma)
@@ -165,18 +167,12 @@ public:
         if (nut == nullptr) return;
         cot[0] = SoSangChuoi(vt + 1);
         cot[1] = nut->data.MAMH;
-        cot[2] = RutGon(nut->data.TENMH, 36);
+        cot[2] = nut->data.TENMH;
         cot[3] = SoSangChuoi(DemNut(nut->data.dsCHT));
 
         if (nut->data.dsCHT != nullptr) { trangThai = DONG_KHOA; return; }
         const MucSnap *m = TimTrongMang(snap, soSnap, [](const MucSnap &x) { return x.ma; }, nut->data.MAMH);
         if (m == nullptr || m->ten != nut->data.TENMH) trangThai = DONG_CHUA_LUU;
-    }
-
-    void LayDuLieuTimKiem(int vt, string cot[]) override {
-        treeMH nut = Nut(vt);
-        if (nut == nullptr) return;
-        cot[2] = nut->data.TENMH;   
     }
 
     void LayDuLieuForm(int vt, string giaTri[]) override {
@@ -218,7 +214,7 @@ public:
         if (!loi.empty()) return loi;
 
 
-        if (gt[0] != nut->data.MAMH) {   
+        if (gt[0] != nut->data.MAMH) {   // doi khoa BST: go ra roi chen lai   
             GoBST(goc, nut->data.MAMH);
             nut->data.MAMH = gt[0];
             ChenBST(goc, nut);
@@ -248,7 +244,7 @@ public:
 
     void KhoiPhucSnapshot() override {
         TaiLaiMonHoc(goc, dsLop);
-        DongBoMangMonHoc(mang, goc);   
+        DongBoMangMonHoc(mang, goc);   // cay vua nap lai: mang cu dang tro vao nut da giai phong   
     }
 
     void CapNhatSnapshot() override {
@@ -259,7 +255,7 @@ public:
     void XuLyEnter(int vt) override {
         treeMH nut = Nut(vt);
         if (nut == nullptr) return;
-        string ma = nut->data.MAMH;   
+        string ma = nut->data.MAMH;   // copy: QuanLyCauHoi co the nap lai cay, nut cu se treo   
         if (QuanLyCauHoi(goc, dsLop, ma)) {
             DongBoMangMonHoc(mang, goc);
             CapNhatSnapshot();

@@ -153,7 +153,7 @@ public:
 
     void XuLyEnter(int vt) override {
         QuanLySinhVien(goc, goc.nodes[vt]);
-        CapNhatSnapshot();
+        CapNhatSnapshot();   // man hinh SV co the da luu hoac nap lai file
     }
 };
 

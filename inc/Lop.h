@@ -7,6 +7,7 @@ const string FILE_LOP = "data/lop.txt";
 
 void QuanLyLop(DsLOP &dsLop);
 
+// tra ve chi so lop, -1 neu khong co; boQua: chi so bo qua (dung khi sua, tranh tu trung chinh no)
 int TimLop(const DsLOP &dsLop, const string &maLop, int boQua = -1);
 
 bool DocFileLop(DsLOP &dsLop, const string &tenFile);

@@ -19,20 +19,6 @@ inline void gotoxy(short x,short y)
         SetConsoleCursorPosition(hConsoleOutput , Cursor_an_Pos);
 }
 
-inline void clrscr() {
-    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    COORD coord = {0, 0};
-    DWORD count;
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-
-    if (GetConsoleScreenBufferInfo(hStdOut, &csbi)) {
-        DWORD cellCount = csbi.dwSize.X * csbi.dwSize.Y;
-        FillConsoleOutputCharacter(hStdOut, (TCHAR) ' ', cellCount, coord, &count);
-        FillConsoleOutputAttribute(hStdOut, csbi.wAttributes, cellCount, coord, &count);
-        SetConsoleCursorPosition(hStdOut, coord);
-    }
-}
-
 inline void AnHienConTro(bool hien) {
     CONSOLE_CURSOR_INFO info;
     info.dwSize = 100;
@@ -68,6 +54,7 @@ inline string VietHoa(string s) {
     return s;
 }
 
+// tach s theo phanCach vao kq[] (toi da toiDa phan tu), tra ve so phan tu; chuoi rong van cho 1 phan tu rong
 inline int TachChuoi(const string &s, char phanCach, string kq[], int toiDa) {
     int n = 0;
     string hienTai = "";
@@ -85,6 +72,8 @@ inline int TachChuoi(const string &s, char phanCach, string kq[], int toiDa) {
 
 const int TOI_DA_TRUONG_FILE = 10;
 
+// doc file tung dong (bo dong trong), moi dong goi xuLy(t, n): t[] = cac truong tach bang '|', n = so truong thuc te
+// tra ve false neu khong mo duoc file
 template<class F> bool DocFileTheoDong(const string &tenFile, F xuLy) {
     ifstream f(tenFile.c_str());
     if (!f.is_open()) return false;
@@ -92,11 +81,99 @@ template<class F> bool DocFileTheoDong(const string &tenFile, F xuLy) {
     while (getline(f, dong)) {
         dong = TrimChuoi(dong);
         if (dong.empty()) continue;
-        for (int i = 0; i < TOI_DA_TRUONG_FILE; i++) t[i].clear();   // truong thieu = "", khong giu du lieu dong truoc
-        int n = TachChuoi(dong, '|', t, TOI_DA_TRUONG_FILE);   // n = so truong that su co tren dong
+        for (int i = 0; i < TOI_DA_TRUONG_FILE; i++) t[i].clear();
+        int n = TachChuoi(dong, '|', t, TOI_DA_TRUONG_FILE);   // n = so truong thuc te
         xuLy(t, n);
     }
     return true;
+}
+
+// ---- TEMPLATE DSLK (P = con tro toi nut co truong next) ----
+template<class P> int DemNut(P p) {
+    int n = 0;
+    for (; p != nullptr; p = p->next) n++;
+    return n;
+}
+
+// nut thu i (tinh tu 0), nullptr neu vuot qua cuoi ds
+template<class P> P NutThuI(P p, int i) {
+    while (p != nullptr && i-- > 0) p = p->next;
+    return p;
+}
+
+template<class P> void ThemCuoi(P &dau, P nut) {
+    nut->next = nullptr;
+    if (dau == nullptr) { dau = nut; return; }
+    P q = dau;
+    while (q->next != nullptr) q = q->next;
+    q->next = nut;
+}
+
+// go nut khoi danh sach, khong xoa tren RAM
+template<class P> void GoNut(P &dau, P nut) {
+    P *p = &dau;
+    while (*p != nullptr && *p != nut) p = &(*p)->next;
+    if (*p != nullptr) *p = nut->next;
+}
+
+template<class P> void GiaiPhongDs(P &dau) {
+    while (dau != nullptr) { P t = dau; dau = dau->next; delete t; }
+}
+
+template<class P, class KeyFn, class Key>
+P TimTrongDs(P dau, KeyFn layKhoa, const Key &khoa) {
+    for (P p = dau; p != nullptr; p = p->next)
+        if (layKhoa(p) == khoa) return p;
+    return nullptr;
+}
+
+// SNAPSHOT DSLK
+template<class P, class CopyFn> P SaoChepDs(P nguon, CopyFn saoChepNut) {
+    P dauMoi = nullptr;
+    P *duoi = &dauMoi;
+    for (P p = nguon; p != nullptr; p = p->next) {
+        *duoi = saoChepNut(p);
+        (*duoi)->next = nullptr;
+        duoi = &(*duoi)->next;
+    }
+    return dauMoi;
+}
+
+template<class P, class DiffFn> bool DsKhacNhau(P a, P b, DiffFn khacNhau) {
+    for (; a != nullptr && b != nullptr; a = a->next, b = b->next)
+        if (khacNhau(a, b)) return true;
+    return a != nullptr || b != nullptr;
+}
+
+
+// ---- TEMPLATE MANG ----
+template<class T> void XoaPhanTuMang(T arr[], int &n, int vt) {
+    for (int i = vt; i < n - 1; i++) arr[i] = arr[i + 1];
+    arr[--n] = T();
+}
+
+template<class T, class KeyFn, class Key>
+const T* TimTrongMang(const T snap[], int soSnap, KeyFn layKhoa, const Key &khoa) {
+    for (int i = 0; i < soSnap; i++)
+        if (layKhoa(snap[i]) == khoa) return &snap[i];
+    return nullptr;
+}
+
+// SNAPSHOT MANG CON TRO
+template<class T, class P, class CopyFn>
+void SaoChepMang(T *&snap, int &soSnap, P arr[], int n, CopyFn saoChep) {
+    delete[] snap;
+    soSnap = n;
+    snap = new T[n];
+    for (int i = 0; i < n; i++) snap[i] = saoChep(arr[i]);
+}
+
+template<class T, class P, class DiffFn>
+bool MangKhacNhau(P arr[], int n, const T snap[], int soSnap, DiffFn khacNhau) {
+    if (n != soSnap) return true;
+    for (int i = 0; i < n; i++)
+        if (khacNhau(arr[i], snap[i])) return true;
+    return false;
 }
 
 #endif

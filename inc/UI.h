@@ -46,8 +46,6 @@ const int HANG_PHU_DE    = 2;
 const int HANG_KE_DUOI   = 3;
 
 int DocPhim();
-void KhoiTaoConsole();
-bool CoKyTu(const string &s, char c);
 string SoSangChuoi(int x);
 string RutGon(const string &s, int toiDa);
 string CanGiua(const string &s, int rong);
@@ -75,10 +73,12 @@ enum LoaiTruong { TRUONG_CHU, TRUONG_MATKHAU, TRUONG_NUT, TRUONG_PHAI,
                   TRUONG_MA, TRUONG_HODEM, TRUONG_TEN, TRUONG_DANGNHAP,
                   TRUONG_NOIDUNG, TRUONG_DAPAN, TRUONG_SO, TRUONG_TENLOP };
 
+// cuonNgang: o 1 dong, chu dai cuon ngang (hien phan duoi) nhu o tim kiem, khong ngat tu xuong dong
 bool NhapTextNhieuDong(int x, int y, int rongDong, int soDong, int maxLen, string &outStr, LoaiTruong loai,
                        int colorText, int colorBg, int *phimThoat = nullptr,
                        std::function<void()> khiCoPhim = nullptr,
-                       std::function<void()> khiThayDoi = nullptr);
+                       std::function<void()> khiThayDoi = nullptr,
+                       bool cuonNgang = false);
 
 struct Truong {
     LoaiTruong loai;
@@ -90,6 +90,7 @@ struct Truong {
     int maxLen = 0;
     bool canGiuaNut = true;   
     bool anKhoaNhan = false;   
+    bool cuonNgang = false;
 
     Truong(LoaiTruong l = TRUONG_CHU, const string &n = "", const string &gt = "",
            int r = 0, int c = 0, int rg = 0, bool k = false)
@@ -101,11 +102,13 @@ struct IKiemTraHetGio {
     virtual bool HetGio() = 0;
 };
 
+// tra ve chi so nut duoc Enter; -1 neu Esc; -2 neu het gio
 int ChayForm(Truong ds[], int n, int &focus, const string &thongBao = "",
-             int hangTB = -1, int cotTB = -1, int rongTB = 0, bool nhanEsc = true,
-             IKiemTraHetGio *kiemTraHetGio = nullptr);
+             bool nhanEsc = true, IKiemTraHetGio *kiemTraHetGio = nullptr);
     
+// tra ve chi so muc duoc Enter
 int MenuTong(string options[], int soLuong, int startRow, int startCol, int focusBanDau);
+// tra ve chi so nut duoc chon (-2 neu het gio)
 int HopThoai(const string &cauHoi, const string nut[], int soNut, int macDinh,
              IKiemTraHetGio *kiemTraHetGio = nullptr);
 bool XacNhan(const string &cauHoi);
@@ -141,6 +144,7 @@ struct Bang {
 void KhoiTaoBang(Bang &b, int row, int col, const string &donVi);
 void ThemCot(Bang &b, const string &tieuDe, int rong);
 
+// chon: dong dang chon TRONG trang hien tai (chi so that = ChiSoChon)
 struct TrangThaiBang {
     int trang;
     int chon;
@@ -157,6 +161,10 @@ inline int SoDongTrang(const TrangThaiBang &t, int tong) {
 }
 void ChinhTrangThai(TrangThaiBang &t, int tong);
 
+// 1 man hinh bang + form (Lop, SV, Mon, Cau hoi...). Quy uoc:
+//   XuLyThem/Sua/Xoa: tra ve "" neu thanh cong, nguoc lai tra ve thong bao loi
+//   KiemTraTruocSua/Xoa: tra ve "" neu duoc phep, nguoc lai tra ve ly do bi khoa
+//   XuLyLuu: false neu loi ghi file;  Snapshot: ban sao luc mo/luu gan nhat, de biet "chua luu" va khoi phuc
 struct IManHinhNhap {
     virtual ~IManHinhNhap() {}
     virtual int LayTongSo() = 0;
@@ -203,14 +211,15 @@ struct DuLieuManHinhNhap {
     string nhanForm[TOI_DA_TRUONG];
     LoaiTruong loaiTruong[TOI_DA_TRUONG];
     bool anNhanKhoa[TOI_DA_TRUONG] = {};
+    bool cuonNgangTruong[TOI_DA_TRUONG] = {};
 
     TrangThaiBang tt;
     PTRNGHIEPVU nghiepVu;
 
     string huongDanXem;
     bool batDauCheDoCho = false;
+    bool enterTrongCheDoCho = false;   // Enter o man hinh cho (F1/F2/F3/Del) goi nghiepVu->XuLyEnter
     bool cheDoChiChon = false;
-    bool khongInDoDongKhoa = false;
     int dongMoiTrang = 20;
     int soDongTruong[TOI_DA_TRUONG] = {};
     int maxLenTruong[TOI_DA_TRUONG] = {};
@@ -229,7 +238,7 @@ struct BangLoc {
     bool dangLoc = false;
     string tuKhoa;
     bool danhDauKieuXoa = false;   
-    int *loc = nullptr;   
+    int *loc = nullptr;
     int soLoc = 0;
     int toiDaLoc = 15;   
     TrangThaiBang ttTruocTim = {0, 0};
@@ -252,7 +261,7 @@ bool XuLyPhimTimBangLoc(BangLoc &bl, int phim);   // true: can ve lai bang
 int  ChiSoDongChon(const BangLoc &bl);   // chi so that cua dong chon, -1 neu rong
 bool CoDanhDauBangLoc(const BangLoc &bl, int idx);
 void DoiDanhDauBangLoc(BangLoc &bl, int idx);   // danh dau <-> bo danh dau
-int  LayDanhDauBangLoc(const BangLoc &bl, int ds[], int toiDa);   // lay chi so da danh dau, tra ve so luong
+int  LayDanhDauBangLoc(const BangLoc &bl, int ds[], int toiDa);   // chep chi so da danh dau (tang dan) vao ds[], tra ve so luong
 void XoaDanhDauBangLoc(BangLoc &bl);
 
 void ChayManHinhNhap(DuLieuManHinhNhap &data);

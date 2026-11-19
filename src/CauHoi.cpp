@@ -1,6 +1,7 @@
 #include "mylib.h"
 #include "CauHoi.h"
 #include "MonHoc.h"
+#include "Thi.h"
 #include "UI.h"
 using namespace std;
 
@@ -17,7 +18,7 @@ static void ThemCauHoi(MONHOC &mh, const CAUHOI &ch) {
 
 bool DocFileCauHoi(treeMH goc, const string &tenFile) {
     idKeTiep = 1;
-    bool *daCo = new bool[TOI_DA_ID_CAUHOI + 1]();  
+    bool *daCo = new bool[TOI_DA_ID_CAUHOI + 1]();   // daCo[id]: id da gap, bo qua dong trung id  
     bool ok = DocFileTheoDong(tenFile, [goc, daCo](string t[], int n) {
         if (n < 8) return;
         treeMH mh = TimMonHoc(goc, VietHoa(TrimChuoi(t[0])));
@@ -25,13 +26,13 @@ bool DocFileCauHoi(treeMH goc, const string &tenFile) {
         CAUHOI ch;
         ch.id = atoi(t[1].c_str());
         ch.NoiDung = t[2];
-        ch.a = t[3]; ch.b = t[4]; ch.c = t[5]; ch.d = t[6];
+        ch.DapAn[0] = t[3]; ch.DapAn[1] = t[4]; ch.DapAn[2] = t[5]; ch.DapAn[3] = t[6];
 
         if (mh == nullptr || ch.id <= 0 || ch.id > TOI_DA_ID_CAUHOI) return;
         if (dapAn.length() != 1 || dapAn[0] < 'A' || dapAn[0] > 'D') return;   
         if (daCo[ch.id]) return;
         daCo[ch.id] = true;
-        ch.DapAn = dapAn[0];
+        ch.DapAnDung = dapAn[0];
 
         ThemCauHoi(mh->data, ch);
         if (ch.id >= idKeTiep) idKeTiep = ch.id + 1;
@@ -45,8 +46,8 @@ static void GhiCay(treeMH n, ofstream &f) {
     GhiCay(n->left, f);
     for (PTRCAUHOI p = n->data.dsCHT; p != nullptr; p = p->next)
         f << n->data.MAMH << "|" << p->data.id << "|" << p->data.NoiDung << "|"
-          << p->data.a << "|" << p->data.b << "|" << p->data.c << "|" << p->data.d << "|"
-          << p->data.DapAn << "\n";
+          << p->data.DapAn[0] << "|" << p->data.DapAn[1] << "|" << p->data.DapAn[2] << "|" << p->data.DapAn[3] << "|"
+          << p->data.DapAnDung << "\n";
     GhiCay(n->right, f);
 }
 
@@ -60,24 +61,24 @@ bool GhiFileCauHoi(treeMH goc, const string &tenFile) {
 static const string LOI_DA_THI = "Cau hoi da duoc su dung trong bai thi, khong the sua hoac xoa!";
 
 static bool KhacNhau(const CAUHOI &x, const CAUHOI &y) {
-    return x.id != y.id || x.NoiDung != y.NoiDung || x.a != y.a || x.b != y.b ||
-           x.c != y.c || x.d != y.d || x.DapAn != y.DapAn;
+    return x.id != y.id || x.NoiDung != y.NoiDung || x.DapAn[0] != y.DapAn[0] || x.DapAn[1] != y.DapAn[1] ||
+           x.DapAn[2] != y.DapAn[2] || x.DapAn[3] != y.DapAn[3] || x.DapAnDung != y.DapAnDung;
 }
 
 static void GanTuForm(CAUHOI &ch, const string gt[]) {
     ch.NoiDung = ChuanHoaKhoangTrang(gt[1]);
-    ch.a = ChuanHoaKhoangTrang(gt[2]);
-    ch.b = ChuanHoaKhoangTrang(gt[3]);
-    ch.c = ChuanHoaKhoangTrang(gt[4]);
-    ch.d = ChuanHoaKhoangTrang(gt[5]);
-    ch.DapAn = gt[6][0];
+    ch.DapAn[0] = ChuanHoaKhoangTrang(gt[2]);
+    ch.DapAn[1] = ChuanHoaKhoangTrang(gt[3]);
+    ch.DapAn[2] = ChuanHoaKhoangTrang(gt[4]);
+    ch.DapAn[3] = ChuanHoaKhoangTrang(gt[5]);
+    ch.DapAnDung = gt[6][0];
 }
 
 class NghiepVuCauHoi : public IManHinhNhap {
 private:
     treeMH &goc;
     DsLOP &dsLop;
-    string maMH;
+    string maMH;   // luu ma thay vi con tro: TaiLaiMonHoc xay lai cay, con tro cu se treo
     PTRCAUHOI snap;
     bool daDongBo;
 
@@ -110,18 +111,12 @@ public:
         if (p == nullptr) return;
         cot[0] = SoSangChuoi(vt + 1);
         cot[1] = SoSangChuoi(p->data.id);
-        cot[2] = RutGon(p->data.NoiDung, 46);
-        cot[3] = string(1, p->data.DapAn);
+        cot[2] = p->data.NoiDung;
+        cot[3] = string(1, p->data.DapAnDung);
 
         if (p->data.DaThi) { trangThai = DONG_KHOA; return; }
         PTRCAUHOI cu = TimTrongSnap(p->data.id);
         if (cu == nullptr || KhacNhau(cu->data, p->data)) trangThai = DONG_CHUA_LUU;
-    }
-
-    void LayDuLieuTimKiem(int vt, string cot[]) override {
-        PTRCAUHOI p = Nut(vt);
-        if (p == nullptr) return;
-        cot[2] = p->data.NoiDung;
     }
 
     void LayDuLieuForm(int vt, string giaTri[]) override {
@@ -129,9 +124,9 @@ public:
         if (p == nullptr) return;
         giaTri[0] = SoSangChuoi(p->data.id);
         giaTri[1] = p->data.NoiDung;
-        giaTri[2] = p->data.a; giaTri[3] = p->data.b;
-        giaTri[4] = p->data.c; giaTri[5] = p->data.d;
-        giaTri[6] = string(1, p->data.DapAn);
+        giaTri[2] = p->data.DapAn[0]; giaTri[3] = p->data.DapAn[1];
+        giaTri[4] = p->data.DapAn[2]; giaTri[5] = p->data.DapAn[3];
+        giaTri[6] = string(1, p->data.DapAnDung);
     }
 
     void LayDuLieuFormThem(string giaTri[]) override { giaTri[0] = SoSangChuoi(XemIdCauHoiMoi()); }
@@ -149,12 +144,9 @@ public:
         for (int i = 0; i < 5; i++)
             if (gt[i + 1].empty()) return string("Vui long nhap ") + TEN_TRUONG[i] + "!";
 
-        string loi = KiemTraHopLeForm(gt + 1, 5);
-        if (!loi.empty()) return loi;
-
         CAUHOI t;
         GanTuForm(t, gt);
-        const string *da[4] = { &t.a, &t.b, &t.c, &t.d };
+        const string *da[4] = { &t.DapAn[0], &t.DapAn[1], &t.DapAn[2], &t.DapAn[3] };
         for (int i = 0; i < 4; i++)
             for (int j = i + 1; j < 4; j++)
                 if (*da[i] == *da[j]) return "Cac dap an khong duoc trung nhau!";
@@ -211,8 +203,11 @@ public:
 
     void KhoiPhucSnapshot() override {
         TaiLaiMonHoc(goc, dsLop);
-        daDongBo = true;
+        daDongBo = true;   // cay da nap lai: noi goi phai dong bo lai
     }
+
+    // Enter: xem chi tiet cau hoi, dung lai giao dien bai thi (Thi.cpp), chi xem
+    void XuLyEnter(int vt) override { XemChiTietCauHoi(MH(), vt); }
 
     void CapNhatSnapshot() override {
         GiaiPhongDs(snap);
@@ -232,6 +227,7 @@ bool QuanLyCauHoi(treeMH &dsMonHoc, DsLOP &dsLop, const string &maMH) {
     DuLieuManHinhNhap data;
     data.tieuDe     = "Danh sach Cau hoi - Mon: " + mh->data.MAMH;
     data.batDauCheDoCho = true;
+    data.enterTrongCheDoCho = true;
     data.coTimKiem = true;
     data.cotTimKiem = 2;
     data.tenTimKiem = "noi dung cau hoi";
@@ -254,6 +250,7 @@ bool QuanLyCauHoi(treeMH &dsMonHoc, DsLOP &dsLop, const string &maMH) {
     data.nhanForm[5] = "Dap an D:";                  data.loaiTruong[5] = TRUONG_NOIDUNG;
     data.nhanForm[6] = "Dap an dung (A/B/C/D):";     data.loaiTruong[6] = TRUONG_DAPAN;
     data.nhanForm[7] = "  XAC NHAN  ";               data.loaiTruong[7] = TRUONG_NUT;
+    for (int i = 2; i <= 5; i++) data.cuonNgangTruong[i] = true;   // dap an A-D: cuon ngang nhu o tim kiem
     const int soDong[8] = { 1, 2,  1,  1,  1,  1,  1,  1 };
     for (int i = 0; i < 8; i++) data.soDongTruong[i] = soDong[i];
     KhoiTaoTrangThai(data.tt);

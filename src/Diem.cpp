@@ -1,3 +1,4 @@
+#include <sstream>
 #include "mylib.h"
 #include "Diem.h"
 #include "SinhVien.h"
@@ -24,37 +25,50 @@ void GiaiPhongDsDiem(PTRDIEMTHI &ds) {
     GiaiPhongDs(ds);
 }
 
-// chi tiet: id:dapAn;id:dapAn  ('-' = bo trong)
-static void NapChiTiet(PTRCTBT &dau, const string &s) {
+void NapChiTiet(PTRCTBT &dau, const string &s) {
     PTRCTBT *duoi = &dau;
     size_t i = 0;
     while (i < s.length()) {
-        size_t hai = s.find(':', i);
-        if (hai == string::npos || hai + 1 >= s.length()) break;
         size_t cham = s.find(';', i);
         if (cham == string::npos) cham = s.length();
+        size_t hai = s.find(':', i);
 
         PTRCTBT p = new NodeCHT_SV();
         p->data.id = atoi(s.c_str() + i);
-        p->data.chonluaSV = (s[hai + 1] == '-') ? ' ' : s[hai + 1];
+        for (int k = 0; k < 4; k++) p->data.tronDapAn[k] = s[hai + 1 + k] - '0';
+        p->data.chonluaSV = (s[hai + 6] == '-') ? ' ' : s[hai + 6];
         *duoi = p;
         duoi = &p->next;
         i = cham + 1;
     }
 }
 
-// MASV|MAMH|DIEM|CHITIET
+string ChiTietSangChuoi(PTRCTBT dau) {
+    string s;
+    for (PTRCTBT c = dau; c != nullptr; c = c->next) {
+        char ch = c->data.chonluaSV;
+        s += SoSangChuoi(c->data.id);
+        s += ':';
+        for (int k = 0; k < 4; k++) s += (char)('0' + c->data.tronDapAn[k]);
+        s += ':';
+        s += (ch >= 'A' && ch <= 'D') ? ch : '-';
+        if (c->next != nullptr) s += ';';
+    }
+    return s;
+}
+
+// MALOP|MASV|MAMH|DIEM|CHITIET
 bool DocFileDiem(DsLOP &dsLop, const string &tenFile) {
     return DocFileTheoDong(tenFile, [&dsLop](string t[], int n) {
-        if (n < 4) return;
-        PTRSINHVIEN sv = TimSinhVien(dsLop, VietHoa(TrimChuoi(t[0])));
-        string maMH = VietHoa(TrimChuoi(t[1]));
+        if (n < 5) return;
+        PTRSINHVIEN sv = TimSinhVien(dsLop, VietHoa(TrimChuoi(t[1])));
+        string maMH = VietHoa(TrimChuoi(t[2]));
         if (sv == nullptr || maMH.empty() || TimDiemThi(sv, maMH) != nullptr) return;
 
         PTRDIEMTHI d = new NodeDIEMTHI();
         d->data.MAMH = maMH;
-        d->data.Diem = (float)atof(t[2].c_str());
-        NapChiTiet(d->data.dsCTBT, t[3]);
+        d->data.Diem = (float)atof(t[3].c_str());
+        NapChiTiet(d->data.dsCTBT, t[4]);
         ThemCuoi(sv->data.Diem, d);
     });
 }
@@ -65,19 +79,99 @@ bool GhiFileDiem(const DsLOP &dsLop, const string &tenFile) {
     for (int i = 0; i < dsLop.n; i++) {
         for (PTRSINHVIEN sv = dsLop.nodes[i]->Dssv; sv != nullptr; sv = sv->next) {
             for (PTRDIEMTHI d = sv->data.Diem; d != nullptr; d = d->next) {
-                f << sv->data.MASV << "|" << d->data.MAMH << "|" << DinhDangDiem(d->data.Diem) << "|";
-                for (PTRCTBT c = d->data.dsCTBT; c != nullptr; c = c->next) {
-                    char ch = c->data.chonluaSV;
-                    f << c->data.id << ":" << ((ch >= 'A' && ch <= 'D') ? ch : '-');
-                    if (c->next != nullptr) f << ";";
-                }
-                f << "\n";
+                f << dsLop.nodes[i]->MALOP << "|" << sv->data.MASV << "|" << d->data.MAMH << "|"
+                  << DinhDangDiem(d->data.Diem) << "|" << ChiTietSangChuoi(d->data.dsCTBT) << "\n";
             }
         }
     }
     return true;
 }
 
+// ---------- PHIEN THI DANG DO (dangthi.txt) ----------
+static string DongPhien(const PhienThi &p) {
+    ostringstream o;
+    o << p.maLop << "|" << p.maSV << "|" << p.maMH << "|" << p.soPhut << "|" << p.ketThuc << "|"
+      << ChiTietSangChuoi(p.dsCTBT);
+    return o.str();
+}
+
+// cac dong cua sinh vien khac (giu nguyen), bo dong cua maSV
+static string GiuDongKhac(const string &maSV) {
+    string giu;
+    ifstream f(FILE_DANGTHI.c_str());
+    if (!f.is_open()) return giu;
+    string dong, t[2];
+    while (getline(f, dong)) {
+        dong = TrimChuoi(dong);
+        if (dong.empty()) continue;
+        TachChuoi(dong, '|', t, 2);
+        if (VietHoa(TrimChuoi(t[1])) != maSV) giu += dong + "\n";
+    }
+    return giu;
+}
+
+bool GhiPhienThi(const PhienThi &p) {
+    string noiDung = GiuDongKhac(p.maSV) + DongPhien(p) + "\n";
+    ofstream f(FILE_DANGTHI.c_str());
+    if (!f.is_open()) return false;
+    f << noiDung;
+    f.flush();
+    return f.good();
+}
+
+void XoaPhienThi(const string &maSV) {
+    string noiDung = GiuDongKhac(maSV);
+    ofstream f(FILE_DANGTHI.c_str());
+    if (!f.is_open()) return;
+    f << noiDung;
+}
+
+// doc het file truoc roi moi goi xuLy, de xuLy duoc phep Ghi/Xoa phien thi
+void DuyetPhienThi(std::function<void(PhienThi &)> xuLy) {
+    string tat, dong;
+    {
+        ifstream f(FILE_DANGTHI.c_str());
+        if (!f.is_open()) return;
+        while (getline(f, dong)) {
+            dong = TrimChuoi(dong);
+            if (!dong.empty()) tat += dong + "\n";
+        }
+    }
+    size_t i = 0;
+    while (i < tat.length()) {
+        size_t hetDong = tat.find('\n', i);
+        string t[TOI_DA_TRUONG_FILE];
+        int n = TachChuoi(tat.substr(i, hetDong - i), '|', t, TOI_DA_TRUONG_FILE);
+        i = hetDong + 1;
+        if (n < 6) continue;
+
+        PhienThi p;
+        p.maLop = VietHoa(TrimChuoi(t[0]));
+        p.maSV  = VietHoa(TrimChuoi(t[1]));
+        p.maMH  = VietHoa(TrimChuoi(t[2]));
+        p.soPhut = atoi(t[3].c_str());
+        istringstream(t[4]) >> p.ketThuc;
+        NapChiTiet(p.dsCTBT, t[5]);
+        xuLy(p);
+        GiaiPhongDs(p.dsCTBT);
+    }
+}
+
+bool DocPhienThi(const string &maSV, PhienThi &kq) {
+    bool thay = false;
+    DuyetPhienThi([&](PhienThi &p) {
+        if (thay || p.maSV != maSV) return;
+        kq = p;
+        p.dsCTBT = nullptr;   // kq giu danh sach, DuyetPhienThi khong giai phong
+        thay = true;
+    });
+    return thay;
+}
+bool SinhVienDangThi(const string &maSV) {
+    bool co = false;
+    DuyetPhienThi([&](PhienThi &p) { if (p.maSV == maSV) co = true; });
+    return co;
+}
 // bang tra cau hoi theo id
 static void NapBangId(treeMH n, PTRCAUHOI bang[]) {
     if (n == nullptr) return;
@@ -99,6 +193,14 @@ void DanhDauCauHoiDaThi(const DsLOP &dsLop, treeMH goc) {
                     if (id >= 0 && id < XemIdCauHoiMoi() && bang[id] != nullptr) bang[id]->data.DaThi = true;
                 }
     }
+
+    // cau hoi nam trong bai thi dang do cung bi khoa
+    DuyetPhienThi([&](PhienThi &p) {
+        for (PTRCTBT c = p.dsCTBT; c != nullptr; c = c->next) {
+            int id = c->data.id;
+            if (id >= 0 && id < XemIdCauHoiMoi() && bang[id] != nullptr) bang[id]->data.DaThi = true;
+        }
+    });
     delete[] bang;
 }
 
@@ -120,12 +222,13 @@ static const string HD_CHI_TIET_BAI_THI =
 static const string LOI_THIEU_DANH_DAU    = "Vui long danh dau du Mon hoc va Lop!";
 static const string LOI_CHUA_CO_SV_THI    = "Chua co sinh vien nao thi mon hoc nay!";
 static const string LOI_CHUA_DANH_DAU_MON = "Vui long danh dau mon hoc!";
+static const string LOI_CHUA_DANH_DAU_SV  = "Vui long danh dau sinh vien!";
 
 static const int PHIM_SPACE = 32;
 
 // bo cuc 2 bang song song
 static const int COT_TRAI       = 3;
-static const int RONG_VUNG_TRAI = 72;   // vung huong dan duoi bang trai
+static const int RONG_VUNG_TRAI = 72;   // rong vung ben trai (bang + huong dan + dong loi)
 static const int COT_PHAI       = COT_TRAI + RONG_VUNG_TRAI + 2;
 static const int RONG_VUNG_PHAI = 62;
 
@@ -157,11 +260,10 @@ public:
     ~MonHocView() { GiaiPhongMangMonHoc(m); }
 
     int LayTongSo() override { return m.soLuong; }
-    void LayDuLieuTimKiem(int vt, string cot[]) override { cot[2] = m.ds[vt]->data.TENMH; }
     void LayDuLieuBang(int vt, string cot[], TrangThaiDong &trangThai) override {
         cot[0] = SoSangChuoi(vt + 1);
         cot[1] = m.ds[vt]->data.MAMH;
-        cot[2] = RutGon(m.ds[vt]->data.TENMH, RONG_COT_TEN_MH - 1);
+        cot[2] = m.ds[vt]->data.TENMH;
         cot[3] = SoSangChuoi(DemNut(m.ds[vt]->data.dsCHT));
         trangThai = DONG_BINH_THUONG;
     }
@@ -174,12 +276,11 @@ public:
     explicit LopView(const DsLOP &ds) : dsLop(ds) {}
 
     int LayTongSo() override { return dsLop.n; }
-    void LayDuLieuTimKiem(int vt, string cot[]) override { cot[2] = dsLop.nodes[vt]->TENLOP; }
     void LayDuLieuBang(int vt, string cot[], TrangThaiDong &trangThai) override {
         const LOP *l = dsLop.nodes[vt];
         cot[0] = SoSangChuoi(vt + 1);
         cot[1] = l->MALOP;
-        cot[2] = RutGon(l->TENLOP, RONG_COT_TEN_LOP - 1);
+        cot[2] = l->TENLOP;
         cot[3] = SoSangChuoi(DemNut(l->Dssv));
         trangThai = DONG_BINH_THUONG;
     }
@@ -239,13 +340,12 @@ public:
     }
 };
 
-static void CauHinhChung(DuLieuManHinhNhap &d, PTRNGHIEPVU nv, const string &tenTim, bool coTim) {
+static void CauHinhChung(DuLieuManHinhNhap &d, PTRNGHIEPVU nv, const string &tenTim) {
     d.soTruongForm = 0;
     KhoiTaoTrangThai(d.tt);
     d.nghiepVu = nv;
     d.cheDoChiChon = true;
-    d.khongInDoDongKhoa = true;
-    d.coTimKiem = coTim;
+    d.coTimKiem = true;
     d.cotTimKiem = 2;
     d.tenTimKiem = tenTim;
     d.loaiTimKiem = TRUONG_CHU;
@@ -259,7 +359,7 @@ static void CauHinhBangChon(DuLieuManHinhNhap &d, PTRNGHIEPVU nv, int col, const
     ThemCot(d.bang, cotMa, rongMa);
     ThemCot(d.bang, cotTen, rongTen);
     ThemCot(d.bang, cotSo, rongSo);
-    CauHinhChung(d, nv, tenTim, true);
+    CauHinhChung(d, nv, tenTim);
 }
 
 static void CauHinhBangMon(DuLieuManHinhNhap &d, PTRNGHIEPVU nv) {
@@ -272,7 +372,7 @@ static void CauHinhBangLop(DuLieuManHinhNhap &d, PTRNGHIEPVU nv) {
                     "SO SV", RONG_COT_SO_SV, "ten lop");
 }
 
-static void CauHinhBangSV(DuLieuManHinhNhap &d, PTRNGHIEPVU nv, int col, bool coDiem, bool coTim = true) {
+static void CauHinhBangSV(DuLieuManHinhNhap &d, PTRNGHIEPVU nv, int col, bool coDiem) {
     KhoiTaoBang(d.bang, HANG_BANG, col, "sinh vien");
     ThemCot(d.bang, "STT", 5);
     ThemCot(d.bang, "MA SV", 13);
@@ -280,7 +380,7 @@ static void CauHinhBangSV(DuLieuManHinhNhap &d, PTRNGHIEPVU nv, int col, bool co
     ThemCot(d.bang, "TEN", 12);
     ThemCot(d.bang, "PHAI", 6);
     if (coDiem) ThemCot(d.bang, "DIEM", 10);
-    CauHinhChung(d, nv, "ho ten", coTim);
+    CauHinhChung(d, nv, "ho ten");
 }
 
 
@@ -314,7 +414,7 @@ static void InBangDiemLop(treeMH mh, LOP *lop) {
     SvView bd(lop, mh->data.MAMH);
     DuLieuManHinhNhap d;
     d.tieuDe = "In bang diem: Mon " + mh->data.MAMH + " - Lop " + lop->MALOP;
-    CauHinhBangSV(d, &bd, COT_TRAI, true, true);
+    CauHinhBangSV(d, &bd, COT_TRAI, true);
     d.huongDanXem = HD_BANG_DIEM;
     ChayManHinhNhap(d);
 }
@@ -419,13 +519,12 @@ public:
     ~MonHocCoCauHoiView() { delete[] ds; }
 
     int LayTongSo() override { return n; }
-    void LayDuLieuTimKiem(int vt, string cot[]) override { cot[2] = ds[vt]->data.TENMH; }
     void LayDuLieuBang(int vt, string cot[], TrangThaiDong &trangThai) override {
         trangThai = DONG_BINH_THUONG;
         if (vt < 0 || vt >= n) return;
         cot[0] = SoSangChuoi(vt + 1);
         cot[1] = ds[vt]->data.MAMH;
-        cot[2] = RutGon(ds[vt]->data.TENMH, RONG_COT_TEN_MH - 1);
+        cot[2] = ds[vt]->data.TENMH;
         cot[3] = SoSangChuoi(DemNut(ds[vt]->data.dsCHT));
     }
 };
@@ -461,6 +560,7 @@ void InChiTietBaiThi(treeMH goc, DsLOP &dsLop) {
 
     DuLieuManHinhNhap dMon;
     CauHinhBangMon(dMon, &mon);
+    const int dongMoiTrangCu = DONG_MOI_TRANG;
     DONG_MOI_TRANG = dMon.dongMoiTrang;
     BangLoc bangMon;
     KhoiTaoBangLoc(bangMon, dMon, RONG_VUNG_TRAI);
@@ -509,8 +609,12 @@ void InChiTietBaiThi(treeMH goc, DsLOP &dsLop) {
                 coLoi = true;
                 continue;
             }
-            int i = ChiSoDongChon(phai.bl);
-            if (i < 0) continue;
+            int i;
+            if (LayDanhDauBangLoc(phai.bl, &i, 1) == 0) {
+                HienLoi(LOI_CHUA_DANH_DAU_SV);
+                coLoi = true;
+                continue;
+            }
             XemChiTietBaiThi(goc, phai.sv->ds[i], monChon);
             veToanMan();
             continue;
@@ -550,4 +654,5 @@ void InChiTietBaiThi(treeMH goc, DsLOP &dsLop) {
 
     GiaiPhongBangLoc(bangMon);
     XoaThanManHinh();
+    DONG_MOI_TRANG = dongMoiTrangCu;
 }
